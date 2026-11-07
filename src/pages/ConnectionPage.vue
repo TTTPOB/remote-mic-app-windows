@@ -203,10 +203,11 @@ const TOOL_CARDS: Array<{ id: VoiceInputTool; name: string; note: string }> = [
   { id: "other", name: "其他工具", note: "自己指定按键" },
 ];
 
-/** "其他工具"可选的按键（报告层合成白名单 = 左右 Alt；不按键 = 只收语音）。 */
+/** "其他工具"可选的按键（报告层合成白名单 = 左右 Alt + 右 Ctrl；不按键 = 只收语音）。 */
 const OTHER_CHORD_OPTIONS: Array<{ id: string; keys: KeyCode[]; label: string }> = [
   { id: "right_alt", keys: ["right_alt"], label: "右 Alt" },
   { id: "left_alt", keys: ["left_alt"], label: "左 Alt" },
+  { id: "right_control", keys: ["right_control"], label: "右 Ctrl" },
   { id: "none", keys: [], label: "不按键" },
 ];
 
@@ -1687,7 +1688,7 @@ onUnmounted(() => {
       <ul>
         <li>{{ t("为什么语音键要“替你按一个键”？遥控器语音键不是键盘按键，输入法只认键盘按键，所以应用替你按住它。") }}</li>
         <li>{{ t("“支持更多输入工具”和“按键”页的“全按键支持”是同一个开关，两处随时同步；每次开启都会弹出一次系统授权。") }}</li>
-        <li>{{ t("“替你按下的键”目前提供 左 Ctrl + 左 Win、右 Alt、左 Alt 和不按键四种；自由录入正在重做，暂未开放。") }}</li>
+        <li>{{ t("“替你按下的键”目前提供 左 Ctrl + 左 Win、右 Alt、左 Alt、右 Ctrl 和不按键五种；自由录入正在重做，暂未开放。") }}</li>
         <li>{{ t("微信输入法要求按住约半秒以上（需要联网），快速点按不出字是它自己的要求，不是故障。") }}</li>
         <li>{{ t("豆包要是当前输入法，否则按住遥控器语音键只会弹出 Windows 的 Alt 菜单（记事本里会出现“文件(F)、编辑(E)”这类字母）。应用会在你**按住语音键时**把输入法切到所选工具；刚切换过输入工具后的第一次按住如果没反应，松开再按一次即可（第一次那下用于切换输入法）。") }}</li>
         <li>{{ t("Vokie、微信输入法或豆包如果没有单独的麦克风选项，把系统默认录音设备设为 CABLE Output。") }}</li>

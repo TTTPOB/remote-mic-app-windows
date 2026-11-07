@@ -740,9 +740,9 @@ describe("VB-CABLE first-launch guidance", () => {
     expect(mocks.setVoiceInputTool).toHaveBeenCalledWith("other");
     expect(mocks.setVoiceHoldHotkey).not.toHaveBeenCalled();
     const chips = wrapper.findAll(".chip-select .chip").map((chip) => chip.text());
-    expect(chips.slice(0, 3)).toEqual(["右 Alt", "左 Alt", "不按键"]);
+    expect(chips.slice(0, 4)).toEqual(["右 Alt", "左 Alt", "右 Ctrl", "不按键"]);
     // 自定义组合键入口：feature flag 关闭时是禁用占位，打开时是可点入口。
-    expect(chips[3]).toBe(
+    expect(chips[4]).toBe(
       VOICE_HOTKEY_CUSTOM_CAPTURE_ENABLED ? "自定义组合键" : "自定义组合键（暂未开放）",
     );
     expect(wrapper.find(".chip-select .chip:disabled").exists()).toBe(
@@ -769,6 +769,17 @@ describe("VB-CABLE first-launch guidance", () => {
     expect(
       wrapper.find(".chip-select .chip[aria-pressed='true']").text(),
     ).toBe("左 Alt");
+
+    // 右 Ctrl（报告层合成白名单 0x00E4，2026-11-07 开放）。
+    await wrapper
+      .findAll(".chip-select .chip")
+      .find((chip) => chip.text() === "右 Ctrl")!
+      .trigger("click");
+    await flushPromises();
+    expect(mocks.setVoiceHoldHotkey).toHaveBeenLastCalledWith({ keys: ["right_control"] });
+    expect(
+      wrapper.find(".chip-select .chip[aria-pressed='true']").text(),
+    ).toBe("右 Ctrl");
 
     await wrapper
       .findAll(".chip-select .chip")

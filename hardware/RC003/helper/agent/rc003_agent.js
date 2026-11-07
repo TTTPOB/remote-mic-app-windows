@@ -100,9 +100,11 @@ var TARGET_USAGES = [
  * Windows 输入流本来就未映射——槽内替换零损失。
  * to 只允许已实测映射的合成 usage（USAGE_TO_VK，见探针 wudf_ioctl_synth.py）：
  * 0x00E6 实测产出 VK_RMENU(0xA5)、0x00E2 实测产出 VK_LMENU(0xA4)。
+ * 0x00E4（RightControl，预期 VK_RCONTROL 0xA3）2026-11-07 加入：与 0x00E6 同为
+ * 键盘页修饰键 usage、同样槽内替换；真机验证待补（日志 synth:frame / voice_effect）。
  * 未实测的 usage 一律拒绝——替换 usage 必须逐键实测。 */
 var SYNTH_FROM_WHITELIST = [0x003E];
-var SYNTH_TO_WHITELIST = [0x00E6, 0x00E2];
+var SYNTH_TO_WHITELIST = [0x00E6, 0x00E2, 0x00E4];
 var TARGET_NAMES = {
   0x00F1: 'back', 0x0028: 'ok', 0x0035: 'tv', 0x004A: 'home',
   0x004F: 'right', 0x0050: 'left', 0x0051: 'down', 0x0052: 'up',

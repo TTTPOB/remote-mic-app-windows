@@ -31,8 +31,9 @@ pub struct SendInputRuntime {
 ///
 /// 只读 `GetAsyncKeyState`，不改变键态。语音会话结束后用它判定遥控器的 HID
 /// 释放报告是否丢失；调用方只在报告层合成门禁为真时使用，避免误伤物理按键。
-pub fn right_alt_down() -> bool {
-    unsafe { GetAsyncKeyState(i32::from(KeyCode::RightAlt.virtual_key())) < 0 }
+/// OS 层键态：该键当前是否按下（报告层合成键的松手保险用）。
+pub fn key_down(key: KeyCode) -> bool {
+    unsafe { GetAsyncKeyState(i32::from(key.virtual_key())) < 0 }
 }
 
 impl SendInputRuntime {

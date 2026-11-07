@@ -9378,7 +9378,7 @@ Raw Input 与键盘钩子同样拿不到它们（那正是 kbdhid 丢弃的直�
         check(
             "内嵌 agent：语音键热键合成白名单与门禁（豆包支持）",
             AGENT_JS.contains("var SYNTH_FROM_WHITELIST = [0x003E];")
-                && AGENT_JS.contains("var SYNTH_TO_WHITELIST = [0x00E6, 0x00E2];")
+                && AGENT_JS.contains("var SYNTH_TO_WHITELIST = [0x00E6, 0x00E2, 0x00E4];")
                 && AGENT_JS.contains("function synthSetIn(")
                 && AGENT_JS.contains("if (cmd.type === 'synth')")
                 && AGENT_JS.contains("type: 'synth_ack'")

@@ -46,6 +46,7 @@ const TOOL_CARDS = computed<Array<{ id: VoiceInputTool; title: string; blurb: st
 const OTHER_OPTIONS = computed<Array<{ label: string; keys: KeyCode[] }>>(() => [
   { label: t("右 Alt"), keys: ["right_alt"] },
   { label: t("左 Alt"), keys: ["left_alt"] },
+  { label: t("右 Ctrl"), keys: ["right_control"] },
   { label: t("不按键"), keys: [] },
 ]);
 

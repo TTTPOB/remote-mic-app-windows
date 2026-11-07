@@ -155,6 +155,7 @@ export default {
   "先为「其他工具」选一个语音键。": "Choose a voice trigger key for Other App first.",
   "右 Alt": "Right Alt",
   "左 Alt": "Left Alt",
+  "右 Ctrl": "Right Ctrl",
   "不按键": "No key",
   "“支持更多输入工具”": "“More Input Tools”",
   "「支持更多输入工具」已开启": "“More Input Tools” is on",

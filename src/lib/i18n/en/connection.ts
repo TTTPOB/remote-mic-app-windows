@@ -143,6 +143,7 @@ export default {
   "左 Ctrl": "Left Ctrl",
   "左 Win": "Left Win",
   "左 Alt": "Left Alt",
+  "右 Ctrl": "Right Ctrl",
   "不按键": "No key",
   "支持更多输入工具": "More Input Tools",
   "“支持更多输入工具”": "“More Input Tools”",
@@ -180,8 +181,8 @@ export default {
     "Why does the voice button press a key for me? The remote's voice button is not a keyboard key, and input tools only respond to keyboard keys, so SayAll holds that key for you.",
   "“支持更多输入工具”和“按键”页的“全按键支持”是同一个开关，两处随时同步；每次开启都会弹出一次系统授权。":
     "“More Input Tools” and “All Buttons” on the Buttons page are the same switch and stay in sync; turning it on always shows a system authorization prompt.",
-  "“替你按下的键”目前提供 左 Ctrl + 左 Win、右 Alt、左 Alt 和不按键四种；自由录入正在重做，暂未开放。":
-    "“The key SayAll presses for you” currently offers Left Ctrl + Left Win, Right Alt, Left Alt, and no key. Free recording is being reworked and is not available yet.",
+  "“替你按下的键”目前提供 左 Ctrl + 左 Win、右 Alt、左 Alt、右 Ctrl 和不按键五种；自由录入正在重做，暂未开放。":
+    "“The key SayAll presses for you” currently offers Left Ctrl + Left Win, Right Alt, Left Alt, Right Ctrl, and no key. Free recording is being reworked and is not available yet.",
   "微信输入法要求按住约半秒以上（需要联网），快速点按不出字是它自己的要求，不是故障。":
     "WeType requires holding for about half a second or longer (it needs a network connection). Quick taps not producing text is its own requirement, not a fault.",
   "豆包要是当前输入法，否则按住遥控器语音键只会弹出 Windows 的 Alt 菜单（记事本里会出现“文件(F)、编辑(E)”这类字母）。应用会在你**按住语音键时**把输入法切到所选工具；刚切换过输入工具后的第一次按住如果没反应，松开再按一次即可（第一次那下用于切换输入法）。":

@@ -112,9 +112,10 @@ pub const VOICE_KEY_HID_USAGE: u16 = 0x003E;
 /// 替换 usage 会在 WUDFHost 翻译链最上游重新推 VK/扫描码，未实测的 usage
 /// 可能产出意外键值或不产出事件——替换 usage 必须逐键实测（探针
 /// wudf_ioctl_synth.py）。当前实测：0x00E6 → VK_RMENU、0x00E2 → VK_LMENU。
+/// 0x00E4（RightControl）2026-11-07 加入，与 0x00E6 同为修饰键 usage，真机验证待补。
 /// 扩表 = 先跑探针，再同步 agent 侧 `SYNTH_TO_WHITELIST`（两侧一致由
 /// 各自测试钉住；agent 是终审，这里只是「不下发注定被拒的配置」的预过滤）。
-pub const VOICE_SYNTHABLE_USAGES: &[u16] = &[0x00E2, 0x00E6];
+pub const VOICE_SYNTHABLE_USAGES: &[u16] = &[0x00E2, 0x00E4, 0x00E6];
 
 /// 「按住说话快捷键」能否驱动报告层合成：**恰好单键**且 usage 在白名单内。
 ///
@@ -2056,13 +2057,17 @@ mod tests {
             voice_synth_target(&chord(&[KeyCode::LeftAlt])),
             Some(0x00E2)
         );
+        assert_eq!(
+            voice_synth_target(&chord(&[KeyCode::RightControl])),
+            Some(0x00E4)
+        );
         // 和弦（v1 默认 Ctrl+Win）：报告槽只有单个替换位，合成不可表达 → None，
         // BLE 层继续走注入路径。这正是"两条路径互斥、判据显式二选一"的一半。
         assert_eq!(
             voice_synth_target(&chord(&[KeyCode::LeftControl, KeyCode::LeftWindows])),
             None
         );
-        // 白名单外单键（Ctrl 未实测）：不下发，同样回落注入路径。
+        // 白名单外单键（左 Ctrl 未开放）：不下发，同样回落注入路径。
         assert_eq!(voice_synth_target(&chord(&[KeyCode::LeftControl])), None);
         // 无 usage 的键（音量键走 Consumer 页）。
         assert_eq!(voice_synth_target(&chord(&[KeyCode::VolumeUp])), None);

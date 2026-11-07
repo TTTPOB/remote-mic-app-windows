@@ -578,9 +578,11 @@ mod voice_effect_verdict_tests {
 fn should_release_stuck_voice_synth(
     report_layer_active: bool,
     tool: Option<VoiceInputTool>,
-    right_alt_down: bool,
+    synth_key_down: bool,
 ) -> bool {
-    report_layer_active && tool == Some(VoiceInputTool::Doubao) && right_alt_down
+    report_layer_active
+        && matches!(tool, Some(VoiceInputTool::Doubao | VoiceInputTool::Other))
+        && synth_key_down
 }
 
 #[cfg(test)]
@@ -608,6 +610,12 @@ mod stuck_voice_synth_tests {
         assert!(!should_release_stuck_voice_synth(
             true,
             Some(VoiceInputTool::Vokie),
+            true
+        ));
+        // 「其他工具」可选右 Ctrl / 左右 Alt 走报告层合成，同样需要松手保险。
+        assert!(should_release_stuck_voice_synth(
+            true,
+            Some(VoiceInputTool::Other),
             true
         ));
         assert!(!should_release_stuck_voice_synth(true, None, true));
@@ -2847,11 +2855,16 @@ fn handle_control(
             // 报告层合成的右 Alt 保险（2026-10-23）：遥控器偶发不发/丢失
             // 语音键的 HID 释放报告，合成键会一直处于按下（豆包语音条不消失）。
             // 给真实报告一个宽限期后检查 OS 键态，确认仍按下才补发抬起。
+            let synth_key = lock(voice_hold_hotkey)
+                .as_ref()
+                .filter(|chord| crate::rc003_bridge::voice_synth_target(chord).is_some())
+                .map(|chord| chord.keys[0]);
             spawn_voice_synth_guard(
                 Arc::clone(send_input),
                 Arc::clone(voice_session_epoch),
                 generation,
                 *lock(voice_input_tool),
+                synth_key,
             );
         }
         PipelineOutput::DecoderSynchronized { .. }
@@ -2876,8 +2889,14 @@ fn spawn_voice_synth_guard(
     voice_session_epoch: Arc<AtomicU64>,
     generation: u64,
     tool: Option<VoiceInputTool>,
+    synth_key: Option<KeyCode>,
 ) {
-    if tool != Some(VoiceInputTool::Doubao) || !crate::key_gate::voice_synth_active() {
+    let Some(synth_key) = synth_key else {
+        return;
+    };
+    if !matches!(tool, Some(VoiceInputTool::Doubao | VoiceInputTool::Other))
+        || !crate::key_gate::voice_synth_active()
+    {
         return;
     }
     let epoch = voice_session_epoch.load(Ordering::SeqCst);
@@ -2892,7 +2911,7 @@ fn spawn_voice_synth_guard(
                 return;
             }
             let report_layer_active = crate::key_gate::voice_synth_active();
-            let key_down = crate::send_input_windows::right_alt_down();
+            let key_down = crate::send_input_windows::key_down(synth_key);
             if !should_release_stuck_voice_synth(report_layer_active, tool, key_down) {
                 gatt_note(format!(
                     "voice_synth_guard generation={generation} epoch={epoch} report_layer={report_layer_active} key_down={key_down} action=none"
@@ -2900,7 +2919,7 @@ fn spawn_voice_synth_guard(
                 return;
             }
             let chord = KeyChord {
-                keys: vec![KeyCode::RightAlt],
+                keys: vec![synth_key],
             };
             match send_input.release(&chord) {
                 Ok(_) => gatt_note(format!(
