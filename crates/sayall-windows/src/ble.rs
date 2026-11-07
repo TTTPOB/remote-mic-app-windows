@@ -76,6 +76,9 @@ const PROMOTION_QUIET_WINDOW: Duration = RECONNECT_BASE_DELAY;
 /// 恰为免费窗口；RC001 短按从不触窗）。宿主须周期发送 MIC_EXTEND(0x0E)
 /// 续期，2.5s 间隔留足余量。
 const MICROPHONE_EXTEND_INTERVAL: Duration = Duration::from_millis(2500);
+/// MIC_EXTEND 写入在途时到期的重试间隔（2026-11-06）：写入改为不阻塞工作
+/// 线程后，上一次写入未完成时不叠加新写入，只按该间隔复查。
+const MICROPHONE_EXTEND_BUSY_RETRY: Duration = Duration::from_millis(250);
 /// 语音流静默上限（2026-10-21 真机卡死事故）：ATVV 在按住期间持续推流，
 /// 即使不说话也有编码帧；若超过该时长一帧都没有，说明松手通知（`00`）
 /// 丢失或链路已半死。此时必须主动收尾并释放「按住说话」快捷键，
@@ -863,6 +866,14 @@ pub(crate) enum WorkerMessage {
     },
     SystemSuspended,
     SystemResumed,
+    /// MIC_EXTEND 异步写入完成（WinRT 完成回调发出，2026-11-06）。
+    /// `elapsed_ms` 是发起到完成的真实耗时：此前同步等待会把音频通知
+    /// 堵在队列里，解除后集中涌入 2 秒 PCM 队列触发 `queue_overflow`。
+    MicExtendCompleted {
+        connection_generation: u64,
+        elapsed_ms: u128,
+        outcome: &'static str,
+    },
     /// 关闭工作线程。`ack` 用于让退出路径**有界等待**会话清理真正完成
     /// （2026-09-16）：`Drop` 里的收尾走 `ack: None`（不阻塞析构），
     /// 应用退出路径走 `Some(..)` 以便落日志并确认 `ble_session_cleanup` 已执行。
@@ -926,6 +937,9 @@ fn worker_loop(
     let mut backoff = ReconnectBackoff::new(RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY);
     let mut held_hotkey: Option<KeyChord> = None;
     let mut extend_deadline: Option<Instant> = None;
+    // 在途的 MIC_EXTEND 写入（2026-11-06）：同一时刻最多一个；完成消息或
+    // 超时取消后清空。不在工作线程上等待写入完成。
+    let mut mic_extend_in_flight: Option<MicExtendInFlight> = None;
     // 回眸：MIC_OPEN 先到就提前取基线；RC003 直接 0x04 时在 StreamStarted 兜底。
     let mut transcript_pending_started = false;
     // 最近一帧 ATVV 音频的到达时刻（2026-10-21）：STOP 丢失时用它判定
@@ -1111,16 +1125,14 @@ fn worker_loop(
                                     })
                                     .encode()
                                     {
-                                        match connected.write(&command) {
-                                            Ok(()) => {
-                                                extend_deadline =
-                                                    Some(now + MICROPHONE_EXTEND_INTERVAL);
-                                            }
-                                            Err(error) => {
-                                                lock(&state).last_error =
-                                                    Some(format!("发送 MIC_EXTEND 失败：{error}"));
-                                            }
-                                        }
+                                        extend_deadline = schedule_microphone_extend(
+                                            connected,
+                                            &command,
+                                            &sender,
+                                            &mut mic_extend_in_flight,
+                                            &state,
+                                            now,
+                                        );
                                     }
                                 }
                             }
@@ -1699,6 +1711,26 @@ fn worker_loop(
                 } else {
                     *lock(&state) = ConnectionSnapshot::default();
                     apply_input_connection_phase(ConnectionPhase::Idle);
+                }
+            }
+            WorkerMessage::MicExtendCompleted {
+                connection_generation: message_generation,
+                elapsed_ms,
+                outcome,
+            } => {
+                let current = mic_extend_in_flight
+                    .as_ref()
+                    .is_some_and(|flight| flight.connection_generation == message_generation);
+                if current {
+                    mic_extend_in_flight = None;
+                }
+                gatt_note(format!(
+                    "mic_extend_write phase=completed terminal_result={} outcome={outcome} elapsed_ms={elapsed_ms} connection_generation={message_generation} late={}",
+                    if outcome == "success" { "passed" } else { "failed" },
+                    !current
+                ));
+                if outcome != "success" && message_generation == connection_generation {
+                    lock(&state).last_error = Some(format!("发送 MIC_EXTEND 失败：{outcome}"));
                 }
             }
             WorkerMessage::Shutdown { ack } => {
@@ -2983,6 +3015,66 @@ fn handle_audio(
     }
 }
 
+/// 在途的 MIC_EXTEND 写入（2026-11-06）。
+struct MicExtendInFlight {
+    connection_generation: u64,
+    started: Instant,
+    operation: IAsyncOperation<GattCommunicationStatus>,
+}
+
+/// MIC_EXTEND 到期处理：发起不阻塞写入并返回下一次到期时刻。
+///
+/// 背景（2026-11-06 现场）：此前 `connected.write` 在工作线程上同步等待
+/// 最长 5 秒，期间 ATVV 音频通知只能堆在无界队列里；解除后集中解码，
+/// 瞬间灌满 2 秒 PCM 队列 → `queue_overflow` → 会话中止 → F5 泄漏。
+/// 现在写入只发起不等待；上一次写入在途时不叠加，超过
+/// `GATT_ASYNC_TIMEOUT` 仍未完成则取消并记录，与 `wait_async` 口径一致。
+fn schedule_microphone_extend(
+    connected: &BleSession,
+    command: &[u8],
+    sender: &Sender<WorkerMessage>,
+    in_flight: &mut Option<MicExtendInFlight>,
+    state: &Arc<Mutex<ConnectionSnapshot>>,
+    now: Instant,
+) -> Option<Instant> {
+    if let Some(flight) = in_flight.as_ref() {
+        let age = now.saturating_duration_since(flight.started);
+        let same_connection = flight.connection_generation == connected.connection_generation;
+        if same_connection && age < GATT_ASYNC_TIMEOUT {
+            gatt_note(format!(
+                "mic_extend_write phase=skipped reason=in_flight in_flight_ms={}",
+                age.as_millis()
+            ));
+            return Some(now + MICROPHONE_EXTEND_BUSY_RETRY);
+        }
+        let _ = flight.operation.Cancel();
+        gatt_note(format!(
+            "mic_extend_write phase=completed terminal_result=failed reason={} in_flight_ms={} action=cancel",
+            if same_connection { "timeout" } else { "stale_connection" },
+            age.as_millis()
+        ));
+        *in_flight = None;
+    }
+    match connected.write_nonblocking(command, sender) {
+        Ok(operation) => {
+            gatt_note("mic_extend_write phase=started".to_owned());
+            *in_flight = Some(MicExtendInFlight {
+                connection_generation: connected.connection_generation,
+                started: now,
+                operation,
+            });
+            Some(now + MICROPHONE_EXTEND_INTERVAL)
+        }
+        Err(error) => {
+            gatt_note(format!(
+                "mic_extend_write phase=completed terminal_result=failed reason=submit_error"
+            ));
+            lock(state).last_error = Some(format!("发送 MIC_EXTEND 失败：{error}"));
+            None
+        }
+    }
+}
+
 fn abort_voice_session(
     session: &mut Option<BleSession>,
     pipeline: &mut AtvvVoicePipeline,
@@ -3585,6 +3677,57 @@ impl BleSession {
             ));
         }
         Ok(connected)
+    }
+
+    /// 发起 ATVV 控制写入但不等待完成（2026-11-06，仅 MIC_EXTEND 使用）。
+    /// 完成时由 WinRT 回调向工作线程投递 `MicExtendCompleted`；返回的操作
+    /// 句柄供超时取消。
+    fn write_nonblocking(
+        &self,
+        bytes: &[u8],
+        sender: &Sender<WorkerMessage>,
+    ) -> Result<IAsyncOperation<GattCommunicationStatus>, PlatformError> {
+        gatt_log("T", bytes);
+        let writer = DataWriter::new().map_err(windows_error)?;
+        writer.WriteBytes(bytes).map_err(windows_error)?;
+        let buffer = writer.DetachBuffer().map_err(windows_error)?;
+        let _ = writer.Close();
+        let properties = self
+            .transmit
+            .CharacteristicProperties()
+            .map_err(windows_error)?;
+        let operation = if has_property(
+            properties,
+            GattCharacteristicProperties::WriteWithoutResponse,
+        ) {
+            self.transmit
+                .WriteValueWithOptionAsync(&buffer, GattWriteOption::WriteWithoutResponse)
+        } else {
+            self.transmit.WriteValueAsync(&buffer)
+        }
+        .map_err(windows_error)?;
+        let started = Instant::now();
+        let connection_generation = self.connection_generation;
+        let sender = sender.clone();
+        let handler = AsyncOperationCompletedHandler::new(move |operation, status| {
+            let outcome = match status {
+                AsyncStatus::Completed => match operation.ok().and_then(|op| op.GetResults()) {
+                    Ok(GattCommunicationStatus::Success) => "success",
+                    Ok(_) => "gatt_failure",
+                    Err(_) => "result_error",
+                },
+                AsyncStatus::Canceled => "canceled",
+                _ => "async_error",
+            };
+            let _ = sender.send(WorkerMessage::MicExtendCompleted {
+                connection_generation,
+                elapsed_ms: started.elapsed().as_millis(),
+                outcome,
+            });
+            Ok(())
+        });
+        operation.SetCompleted(&handler).map_err(windows_error)?;
+        Ok(operation)
     }
 
     fn write(&self, bytes: &[u8]) -> Result<(), PlatformError> {
