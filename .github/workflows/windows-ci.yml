@@ -63,6 +63,13 @@ jobs:
           # `cargo check --target` 使用。
           targets: aarch64-pc-windows-msvc
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-verify
+          workspaces: |
+            . -> target
+            hardware/RC003/helper -> target
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -155,6 +162,13 @@ jobs:
           # job 也必须装 aarch64 目标；链接器由 windows-2025 镜像自带的 VS ARM64
           # 工具集提供（见下方 staging 步骤的注释）。
           targets: aarch64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-installer
+          workspaces: |
+            . -> target
+            hardware/RC003/helper -> target
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile

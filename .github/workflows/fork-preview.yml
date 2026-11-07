@@ -1,0 +1,85 @@
+name: Fork preview installer
+
+# Fork-only fast path: build an x64 NSIS installer for manual testing.
+# Skips the test suites, the predecessor upgrade fixture, the arm64 payload and
+# the installer lifecycle matrix. Run the full Windows CI before opening a PR.
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'Testing/**'
+      - 'Screenshots/**'
+
+permissions:
+  contents: read
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  CARGO_INCREMENTAL: "0"
+
+concurrency:
+  group: fork-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # Never run in the upstream repository.
+    if: github.repository != 'GetSayAll/remote-mic-app-windows'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # No aarch64 target: staging detects the missing toolchain and builds x64 only.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fork-preview-release
+          workspaces: |
+            . -> target
+            hardware/RC003/helper -> target
+          # Branch caches fall back to this key on new branches.
+          save-if: "true"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure updater signing key (CI fallback for missing secret)
+        shell: pwsh
+        run: ./scripts/ensure-updater-signing-key.ps1
+
+      - name: Stage bundle resources (helper + frida gadget, x64 only)
+        run: node scripts/stage-bundle-inputs.cjs
+
+      - name: Build unsigned NSIS preview installer
+        run: pnpm tauri build --bundles nsis
+
+      - name: Verify frontend assets are embedded in the executable
+        shell: pwsh
+        run: ./scripts/verify-frontend-embedded.ps1
+
+      - name: Verify installer identity and create checksums
+        shell: pwsh
+        run: ./scripts/verify-windows-bundle.ps1
+
+      - name: Upload unsigned preview installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: sayall-windows-fork-preview-${{ github.sha }}
+          path: artifacts/windows-preview/
+          if-no-files-found: error
+          retention-days: 7
